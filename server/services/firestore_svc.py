@@ -52,6 +52,7 @@ def save_many_raw(collection: str, rows: Iterable[Dict[str, Any]]) -> List[str]:
     return ids
 
 def get_one_raw(collection: str, doc_id: str) -> Optional[Dict[str, Any]]:
+    """Get a single document from Firestore."""
     col = _ensure_valid_collection(collection)
     db = _db()
     snap = db.collection(col).document(doc_id).get()

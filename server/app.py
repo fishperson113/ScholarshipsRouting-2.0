@@ -1,6 +1,6 @@
 import os
 from fastapi import FastAPI
-from routes import health, search, auth, webhooks, firestore_routes
+from routes import health, search, auth, webhooks, firestore_routes, realtime
 import firebase_admin
 from firebase_admin import credentials
 from fastapi.middleware.cors import CORSMiddleware
@@ -31,12 +31,29 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ==================== Startup Event ====================
+
+@app.on_event("startup")
+async def startup_event():
+    """Initialize connections on startup."""
+    print("🚀 Starting Scholarships Routing API 2.0...")
+    
+    # Initialize Redis connection
+    try:
+        from services.redis_manager import redis_manager
+        redis_manager.client.ping()
+        print("✅ Redis connection verified")
+    except Exception as e:
+        print(f"⚠️  Redis connection failed: {e}")
+        print("   Application will continue without caching")
+
 # Include routers
 app.include_router(health.router, prefix="/health", tags=["health"])
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["auth"])
 app.include_router(search.router, prefix="/api/v1/es", tags=["elasticsearch"])
 app.include_router(webhooks.router, prefix="/api/v1/webhooks", tags=["webhooks"])
 app.include_router(firestore_routes.router, prefix="/api/v1/firestore", tags=["firestore"])
+app.include_router(realtime.router, prefix="/api/v1/realtime", tags=["realtime"])
 
 @app.get("/", tags=["root"])
 def root():
@@ -44,7 +61,8 @@ def root():
         "message": "Scholarships Routing API 2.0",
         "docs": "/docs",
         "health": "/health/live",
-        "flower": "http://localhost:5555 (Celery monitoring)"
+        "flower": "http://localhost:5555 (Celery monitoring)",
+        "websocket": "ws://localhost:8000/api/v1/realtime/ws/updates/{channel}"
     }
 
 

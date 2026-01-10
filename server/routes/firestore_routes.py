@@ -54,6 +54,7 @@ async def upload_document(collection: str, request: DocumentData):
     Upload a single document to Firestore (async via Celery).
     
     The upload is queued as a background task and processed by Celery worker.
+    Cache is invalidated after upload (write-around pattern).
     
     Args:
         collection: Collection name (URL path parameter)
@@ -79,6 +80,16 @@ async def upload_document(collection: str, request: DocumentData):
             doc_id=request.doc_id
         )
         
+        # Invalidate cache (write-around pattern)
+        try:
+            from services.redis_manager import redis_manager
+            if request.doc_id:
+                redis_manager.invalidate(f"firestore:{collection}:{request.doc_id}")
+            else:
+                redis_manager.invalidate_pattern(f"firestore:{collection}:*")
+        except:
+            pass
+        
         return UploadResponse(
             status="queued",
             message=f"Document upload queued for collection '{collection}'",
@@ -91,6 +102,13 @@ async def upload_document(collection: str, request: DocumentData):
             doc_id = save_with_id(collection, request.doc_id, request.data)
         else:
             doc_id = save_one_raw(collection, request.data)
+        
+        # Invalidate cache
+        try:
+            from services.redis_manager import redis_manager
+            redis_manager.invalidate(f"firestore:{collection}:{doc_id}")
+        except:
+            pass
         
         return UploadResponse(
             status="completed",
@@ -108,6 +126,7 @@ async def upload_documents_bulk(collection: str, request: BulkDocumentData):
     Upload multiple documents to Firestore (async via Celery).
     
     Bulk uploads are processed in batches by Celery worker for better performance.
+    Cache is invalidated after upload (write-around pattern).
     
     Args:
         collection: Collection name (URL path parameter)
@@ -134,6 +153,13 @@ async def upload_documents_bulk(collection: str, request: BulkDocumentData):
             documents=request.documents
         )
         
+        # Invalidate cache (write-around pattern)
+        try:
+            from services.redis_manager import redis_manager
+            redis_manager.invalidate_pattern(f"firestore:{collection}:*")
+        except:
+            pass
+        
         return UploadResponse(
             status="queued",
             message=f"Bulk upload of {len(request.documents)} documents queued for collection '{collection}'",
@@ -144,6 +170,13 @@ async def upload_documents_bulk(collection: str, request: BulkDocumentData):
         # Fallback: synchronous bulk upload if Celery not configured
         from services.firestore_svc import save_many_raw
         doc_ids = save_many_raw(collection, request.documents)
+        
+        # Invalidate cache
+        try:
+            from services.redis_manager import redis_manager
+            redis_manager.invalidate_pattern(f"firestore:{collection}:*")
+        except:
+            pass
         
         return UploadResponse(
             status="completed",
@@ -163,7 +196,9 @@ async def query_document(
     doc_id: str
 ):
     """
-    Query a single document from Firestore by ID.
+    Query a single document from Firestore by ID with Redis caching.
+    
+    Implements cache-aside pattern at API layer.
     
     Args:
         collection: Collection name
@@ -175,8 +210,20 @@ async def query_document(
     Example:
         GET /api/v1/firestore/query/scholarships/abc123
     """
+    cache_key = f"firestore:{collection}:{doc_id}"
+    
     try:
-        data = get_one_raw(collection, doc_id)
+        from services.redis_manager import redis_manager
+        
+        # Cache-aside pattern: check cache first
+        def fetch_from_firestore():
+            return get_one_raw(collection, doc_id)
+        
+        data = redis_manager.get_cached(
+            key=cache_key,
+            fetch_func=fetch_from_firestore,
+            ttl=3600  # 1 hour
+        )
         
         return QueryResponse(
             collection=collection,
@@ -185,8 +232,16 @@ async def query_document(
             found=data is not None
         )
         
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Query failed: {str(e)}")
+    except:
+        # Fallback: direct query if Redis unavailable
+        data = get_one_raw(collection, doc_id)
+        
+        return QueryResponse(
+            collection=collection,
+            doc_id=doc_id,
+            data=data,
+            found=data is not None
+        )
 
 
 @router.get("/query/{collection}")
@@ -196,7 +251,10 @@ async def query_collection(
     offset: int = Query(0, ge=0, description="Number of documents to skip")
 ):
     """
-    Query multiple documents from a Firestore collection.
+    Query multiple documents from a Firestore collection with Redis caching.
+    
+    Implements cache-aside pattern at API layer.
+    Cache key includes collection, limit, and offset for proper pagination caching.
     
     Args:
         collection: Collection name
@@ -209,7 +267,10 @@ async def query_collection(
     Example:
         GET /api/v1/firestore/query/scholarships?limit=20&offset=0
     """
-    try:
+    # Create cache key including pagination params
+    cache_key = f"firestore:collection:{collection}:limit:{limit}:offset:{offset}"
+    
+    def fetch_from_firestore():
         from firebase_admin import firestore
         
         db = firestore.client()
@@ -229,9 +290,20 @@ async def query_collection(
             "offset": offset,
             "documents": results
         }
+    
+    try:
+        from services.redis_manager import redis_manager
         
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Collection query failed: {str(e)}")
+        # Cache-aside pattern: check cache first
+        return redis_manager.get_cached(
+            key=cache_key,
+            fetch_func=fetch_from_firestore,
+            ttl=1800  # 30 minutes (collection queries change less frequently)
+        )
+        
+    except:
+        # Fallback: direct query if Redis unavailable
+        return fetch_from_firestore()
 
 
 # ==================== Task Status Endpoint ====================

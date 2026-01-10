@@ -110,7 +110,11 @@ class RedisManager:
             
             if cached_value is not None:
                 # Cache hit
+                print(f"✅ CACHE HIT: {key}")
                 return deserializer(cached_value)
+            
+            # Cache miss
+            print(f"❌ CACHE MISS: {key}")
             
             # Step 2: Cache miss - fetch from source if function provided
             if fetch_func is not None:
@@ -119,6 +123,7 @@ class RedisManager:
                 if fresh_data is not None:
                     # Step 3: Populate cache
                     self.set_cached(key, fresh_data, ttl=ttl)
+                    print(f"💾 CACHED: {key} (TTL: {ttl}s)")
                 
                 return fresh_data
             
@@ -182,7 +187,10 @@ class RedisManager:
             >>> redis_mgr.invalidate(f"user:{user_id}")
         """
         try:
-            return bool(self.client.delete(key))
+            result = bool(self.client.delete(key))
+            if result:
+                print(f"🗑️  CACHE INVALIDATED: {key}")
+            return result
         except redis.RedisError as e:
             print(f"Redis error in invalidate: {e}")
             return False
@@ -204,7 +212,9 @@ class RedisManager:
         try:
             keys = self.client.keys(pattern)
             if keys:
-                return self.client.delete(*keys)
+                count = self.client.delete(*keys)
+                print(f"🗑️  CACHE INVALIDATED (pattern): {pattern} ({count} keys)")
+                return count
             return 0
         except redis.RedisError as e:
             print(f"Redis error in invalidate_pattern: {e}")
