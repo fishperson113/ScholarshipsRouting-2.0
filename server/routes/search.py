@@ -3,9 +3,10 @@ import os
 import hashlib
 import json
 from typing import Any, Dict, List, Union, Optional, Literal
-from fastapi import APIRouter, Body, Query
+from fastapi import APIRouter, Body, Query, Depends
 from elasticsearch import Elasticsearch
-from services.es_svc import search_keyword, index_many, filter_advanced
+from services.es_svc import search_keyword, index_many, filter_advanced, delete_index
+from services.auth_svc import get_current_user_or_guest
 from firebase_admin import firestore
 from dtos.search_dtos import FilterItem
 
@@ -19,42 +20,49 @@ def search(
     q: str = Query(..., description="Từ khóa full-text"),
     size: int = Query(10, ge=1, le=100),
     offset: int = Query(0, ge=0),
-    collection: str = Query(..., description="Tên collection cần search")
+    collection: str = Query(..., description="Tên collection cần search"),
+    current_user: dict = Depends(get_current_user_or_guest)
 ):
     """
     Full-text search with Redis-based debounce to minimize API calls.
     
+    Requires authentication (Firebase user or guest token).
     Uses Redis as a buffer to prevent excessive calls during typing.
     If the same search is requested within the debounce window (300ms), 
     it returns a "debounced" status instead of executing the search.
     
     This prevents 3-4 API calls when users are typing/correcting typos.
+    Debounce is per-user to prevent cross-user interference.
     
     Args:
         q: Search query
         size: Results per page
         offset: Pagination offset
         collection: Collection to search
+        current_user: Authenticated user (injected)
         
     Returns:
         Search results or debounced status
         
     Example:
         GET /api/v1/es/search?q=engineering&collection=scholarships
+        Headers: Authorization: Bearer <token>
     """
     import time
     
     # Backend-controlled debounce window (300ms)
     DEBOUNCE_MS = 300
     
-    # Create debounce key based on query and user context
-    # In production, you might want to include user_id or session_id
-    debounce_key = f"search:debounce:{collection}:{q}:{size}:{offset}"
+    # Get user ID for per-user debouncing
+    user_id = current_user.get("uid") or current_user.get("guest_id", "anonymous")
+    
+    # Create debounce key with user_id for per-user rate limiting
+    debounce_key = f"search:debounce:{user_id}:{collection}:{q}:{size}:{offset}"
     
     try:
         from services.redis_manager import redis_manager
         
-        # Check if this exact search was recently requested
+        # Check if this exact search was recently requested by this user
         last_search_time = redis_manager.client.get(debounce_key)
         current_time = int(time.time() * 1000)  # milliseconds
         
@@ -177,10 +185,27 @@ def filter_documents(
     inter_field_operator: Literal["AND", "OR"] = Query("AND", description="Toán tử kết hợp các bộ lọc với nhau"),
     
     # --- Request body giờ là một danh sách FilterItem ---
-    filters: List[FilterItem] = Body(..., example=filter_example)
+    filters: List[FilterItem] = Body(..., example=filter_example),
+    
+    # --- Authentication ---
+    current_user: dict = Depends(get_current_user_or_guest)
 ):
     """
     API để lọc document với các điều kiện phức tạp.
+    
+    Requires authentication (Firebase user or guest token).
+    
+    Args:
+        collection: Collection name to filter
+        size: Number of results to return
+        offset: Pagination offset
+        inter_field_operator: Operator to combine filters (AND/OR)
+        filters: List of filter conditions
+        current_user: Authenticated user (injected)
+        
+    Example:
+        POST /api/v1/es/filter?collection=scholarships
+        Headers: Authorization: Bearer <token>
     """
     es = Elasticsearch(
         hosts=[ES_HOST],

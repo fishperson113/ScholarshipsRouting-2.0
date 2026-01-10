@@ -106,6 +106,25 @@ async def verify_firebase_user(
         )
 
 
+async def get_current_user_or_guest(
+    credentials: HTTPAuthorizationCredentials = Depends(security_scheme)
+) -> Dict[str, Any]:
+    """
+    Get current user as dict (easier to work with in routes).
+    Supports both Firebase users and guest sessions.
+    
+    Returns:
+        Dict with user info: {"uid": str, "email": str|None, "provider": str, "is_anonymous": bool}
+    """
+    user = await verify_firebase_user(credentials)
+    return {
+        "uid": user.uid,
+        "email": user.email,
+        "provider": user.provider,
+        "is_anonymous": user.is_anonymous
+    }
+
+
 def require_user_ownership(current_user: AuthenticatedUser, target_uid: str) -> None:
     """
     Verify that the authenticated user can only access their own data.
