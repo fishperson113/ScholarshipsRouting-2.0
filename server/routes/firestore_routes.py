@@ -73,14 +73,16 @@ async def upload_document(collection: str, request: DocumentData):
     try:
         from services.tasks import upload_document_task
         
-        # Queue upload task
-        task = upload_document_task.delay(
-            collection=collection,
-            data=request.data,
-            doc_id=request.doc_id
+        # Queue upload task to Celery
+        task = upload_document_task.apply_async(
+            kwargs={
+                "collection": collection,
+                "data": request.data,
+                "doc_id": request.doc_id
+            }
         )
         
-        # Invalidate cache (write-around pattern)
+        # Invalidate cache immediately (write-around pattern)
         try:
             from services.redis_manager import redis_manager
             if request.doc_id:
@@ -147,13 +149,15 @@ async def upload_documents_bulk(collection: str, request: BulkDocumentData):
     try:
         from services.tasks import upload_documents_bulk_task
         
-        # Queue bulk upload task
-        task = upload_documents_bulk_task.delay(
-            collection=collection,
-            documents=request.documents
+        # Queue bulk upload task to Celery
+        task = upload_documents_bulk_task.apply_async(
+            kwargs={
+                "collection": collection,
+                "documents": request.documents
+            }
         )
         
-        # Invalidate cache (write-around pattern)
+        # Invalidate cache immediately (write-around pattern)
         try:
             from services.redis_manager import redis_manager
             redis_manager.invalidate_pattern(f"firestore:{collection}:*")

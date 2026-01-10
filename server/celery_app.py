@@ -41,6 +41,20 @@ celery_app.conf.update(
     broker_connection_retry_on_startup=True,
 )
 
+# ==================== Initialize Firebase for Celery Workers ====================
+# Celery workers run in separate processes and need their own Firebase initialization
+import firebase_admin
+from firebase_admin import credentials
+
+if not firebase_admin._apps:
+    cred_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+    if cred_path and os.path.exists(cred_path):
+        cred = credentials.Certificate(cred_path)
+        firebase_admin.initialize_app(cred)
+        print(f"✅ Firebase initialized for Celery workers: {cred_path}")
+    else:
+        print(f"⚠️  Firebase credentials not found: {cred_path}")
+
 # ==================== Configure Cron Scheduler ====================
 # Import and configure Celery Beat for scheduled tasks
 try:
@@ -50,27 +64,6 @@ except ImportError:
     # Cron scheduler not yet configured
     pass
 
-# NOTE: Auto-discovery is commented out for now
-# Uncomment when you have tasks.py ready
-# celery_app.autodiscover_tasks(['tasks'])
-
-
-# Example tasks are commented out - uncomment when needed
-# @celery_app.task(name="tasks.example_task")
-# def example_task(x: int, y: int) -> int:
-#     """Example task that adds two numbers."""
-#     return x + y
-
-
-# @celery_app.task(name="tasks.send_email_task")
-# def send_email_task(to: str, subject: str, body: str) -> dict:
-#     """
-#     Example email task (placeholder).
-#     Replace with actual email sending logic.
-#     """
-#     print(f"Sending email to {to}: {subject}")
-#     return {
-#         "status": "sent",
-#         "to": to,
-#         "subject": subject
-#     }
+# ==================== Auto-discover Tasks ====================
+# Discover tasks from services.tasks module
+celery_app.autodiscover_tasks(['services'], force=True)

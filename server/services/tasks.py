@@ -47,6 +47,15 @@ def process_scholarship_sync(collection: str) -> Dict[str, Any]:
         
         try:
             result = index_many(es, items, index=collection, collection=collection)
+            
+            # Invalidate cache after successful sync
+            try:
+                from services.redis_manager import redis_manager
+                redis_manager.invalidate_pattern(f"es:search:*")
+                redis_manager.invalidate_pattern(f"firestore:{collection}:*")
+            except:
+                pass
+            
             return {
                 "status": "ok",
                 "total_documents": len(items),
@@ -62,6 +71,87 @@ def process_scholarship_sync(collection: str) -> Dict[str, Any]:
             "status": "error",
             "message": str(e),
             "collection": collection,
+            "error_type": type(e).__name__
+        }
+
+
+@celery_app.task(name="tasks.sync_firestore_to_elasticsearch")
+def sync_firestore_to_elasticsearch(collection: str, index: str = None) -> Dict[str, Any]:
+    """
+    Async task to sync Firestore collection to Elasticsearch.
+    
+    This is the new dedicated task for ES sync operations.
+    
+    Args:
+        collection: Firestore collection name
+        index: Elasticsearch index name (defaults to collection name)
+        
+    Returns:
+        Dict with sync results
+    """
+    from firebase_admin import firestore
+    from elasticsearch import Elasticsearch
+    from services.es_svc import index_many
+    import os
+    
+    index_name = index or collection
+    
+    try:
+        # Get Firestore data
+        db = firestore.client()
+        docs = db.collection(collection).stream()
+        items = [{"id": doc.id, **doc.to_dict()} for doc in docs]
+        
+        if not items:
+            return {
+                "status": "ok",
+                "message": f"No documents in collection '{collection}'",
+                "total_documents": 0
+            }
+        
+        # Index to Elasticsearch
+        ES_HOST = os.getenv("ELASTICSEARCH_HOST")
+        ES_USER = os.getenv("ELASTIC_USER")
+        ES_PASS = os.getenv("ELASTIC_PASSWORD")
+        
+        es = Elasticsearch(
+            hosts=[ES_HOST],
+            basic_auth=(ES_USER, ES_PASS),
+            verify_certs=False,
+            max_retries=30,
+            retry_on_timeout=True,
+            request_timeout=30,
+        )
+        
+        try:
+            result = index_many(es, items, index=index_name, collection=collection)
+            
+            # Invalidate cache after successful sync
+            try:
+                from services.redis_manager import redis_manager
+                redis_manager.invalidate_pattern(f"es:search:*")
+                redis_manager.invalidate_pattern(f"firestore:{collection}:*")
+            except:
+                pass
+            
+            return {
+                "status": "success",
+                "collection": collection,
+                "index": index_name,
+                "total_documents": len(items),
+                "indexed": result["success"],
+                "failed": result["failed"],
+                "failed_records": result.get("failed_ids", [])
+            }
+        finally:
+            es.close()
+            
+    except Exception as e:
+        return {
+            "status": "error",
+            "collection": collection,
+            "index": index_name,
+            "error": str(e),
             "error_type": type(e).__name__
         }
 

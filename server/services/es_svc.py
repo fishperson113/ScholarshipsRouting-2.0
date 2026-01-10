@@ -381,3 +381,42 @@ def filter_advanced(
         for h in res["hits"]["hits"]
     ]
     return {"total": res["hits"]["total"]["value"], "items": hits}
+
+
+def delete_index(client: Elasticsearch, index: str) -> dict:
+    """
+    Delete an Elasticsearch index.
+    
+    Args:
+        client: Elasticsearch client
+        index: Index name to delete
+        
+    Returns:
+        Dict with deletion status
+        
+    Example:
+        >>> es = Elasticsearch(...)
+        >>> result = delete_index(es, "scholarships")
+        >>> print(result)
+        {"status": "deleted", "index": "scholarships"}
+    """
+    try:
+        if client.indices.exists(index=index):
+            client.indices.delete(index=index)
+            return {
+                "status": "deleted",
+                "index": index,
+                "message": f"Index '{index}' deleted successfully"
+            }
+        else:
+            return {
+                "status": "not_found",
+                "index": index,
+                "message": f"Index '{index}' does not exist"
+            }
+    except Exception as e:
+        return {
+            "status": "error",
+            "index": index,
+            "error": str(e)
+        }
