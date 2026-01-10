@@ -1,0 +1,106 @@
+version: "3.9"
+
+services:
+  # ===================== Python API Server =====================
+  server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: scholarships-server
+    env_file: [.env]
+    ports:
+      - "${APP_PORT}:8000"
+    depends_on:
+      es:
+        condition: service_healthy
+    volumes:
+      - ./secrets/firebase_key.json:/run/secrets/firebase_key.json:ro
+      - ./server:/app
+    restart: unless-stopped
+
+  # ===================== Elasticsearch =====================
+  es:
+    image: docker.elastic.co/elasticsearch/elasticsearch:9.1.4
+    container_name: scholarships-elasticsearch
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    ports:
+      - "${ELASTICSEARCH_PORT}:9200"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9200/_cluster/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - esdata:/usr/share/elasticsearch/data
+    restart: unless-stopped
+
+  # ===================== Redis =====================
+  redis:
+    image: redis:7-alpine
+    container_name: scholarships-redis
+    command: redis-server --requirepass ${REDIS_PASSWORD}
+    ports:
+      - "${REDIS_PORT}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - redisdata:/data
+    restart: unless-stopped
+
+  # ===================== Celery Worker =====================
+  celery_worker:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: scholarships-celery-worker
+    env_file: [.env]
+    command: celery -A celery_app worker --loglevel=info
+    depends_on:
+      - redis
+    volumes:
+      - ./server:/app
+      - ./secrets/firebase_key.json:/run/secrets/firebase_key.json:ro
+    restart: unless-stopped
+
+  # ===================== Celery Flower (Monitoring) =====================
+  flower:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: scholarships-flower
+    env_file: [.env]
+    command: celery -A celery_app flower --port=5555 --basic-auth=admin:flower_admin_password
+    ports:
+      - "5555:5555"
+    depends_on:
+      - redis
+      - celery_worker
+    volumes:
+      - ./server:/app
+    restart: unless-stopped
+
+  # ===================== Celery Beat (Cron Scheduler) =====================
+  celery_beat:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: scholarships-celery-beat
+    env_file: [.env]
+    command: celery -A celery_app beat --loglevel=info
+    depends_on:
+      - redis
+    volumes:
+      - ./server:/app
+      - celerybeat-schedule:/tmp
+    restart: unless-stopped
+
+volumes:
+  esdata:
+  redisdata:
+  celerybeat-schedule:

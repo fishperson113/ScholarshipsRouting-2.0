@@ -1,0 +1,24 @@
+# Web Framework
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+
+# Firebase
+firebase-admin==6.4.0
+
+# Elasticsearch
+elasticsearch==8.11.1
+
+# Authentication & Security
+PyJWT==2.8.0
+httpx==0.26.0
+
+# Data Validation
+pydantic[email]==2.5.3
+
+# CORS
+python-multipart==0.0.6
+
+# Celery (for future background tasks)
+celery==5.3.6
+redis==5.0.1
+flower==2.0.1
