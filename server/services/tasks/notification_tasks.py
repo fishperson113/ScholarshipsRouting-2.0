@@ -1,108 +1,79 @@
 
 from celery import shared_task
-import firebase_admin
 from firebase_admin import firestore
 from datetime import datetime, timedelta
 import logging
+import asyncio
+from services.event_manager import event_bus
 
-# Setup Logger
 logger = logging.getLogger(__name__)
 
-# Constants
-DAYS_BEFORE_DEADLINE = 3  # Notify 3 days before deadline
+DAYS_BEFORE_DEADLINE = 3
 
 @shared_task(name="tasks.check_application_deadlines")
 def check_application_deadlines():
     """
-    Periodic task to check scholarship applications near deadline.
-    Runs daily (configured in cron_scheduler.py).
-    
-    Logic:
-    1. Scan all users' applications.
-    2. Identify applications with deadline in X days (e.g., 3 days).
-    3. Filter for status != 'submitted'.
-    4. Create notification in Firestore.
+    Periodic task: Scans for expiring applications and emits events.
+    It does NOT create notifications directly (SOC: Separation of Concerns).
     """
-    logger.info("⏰ Starting deadline check task...")
+    logger.info("⏰ Starting deadline check task (Event-Driven)...")
     
     try:
         db = firestore.client()
+        # Note: In production, use Collection Group Index for better performance:
+        # db.collection_group('applications').where(...)
         
-        # We need to iterate through all users to find their applications
-        # Note: This is a simple implementation. For huge user base, consider Collection Group Query.
-        users_ref = db.collection('users')
-        users = users_ref.stream()
-        
-        notification_count = 0
+        users = db.collection('users').stream()
+        processed_count = 0
         
         for user in users:
             uid = user.id
-            process_user_applications(db, uid, notification_count)
-
-        logger.info(f"✅ Deadline check completed. Sent {notification_count} notifications.")
-        return {"status": "success", "notifications_sent": notification_count}
+            apps_ref = db.collection('users').document(uid).collection('applications')
+            # Only check active applications
+            apps = apps_ref.where('status', '!=', 'submitted').stream()
+            
+            for app in apps:
+                process_single_application(uid, app)
+                processed_count += 1
+                
+        logger.info(f"✅ Deadline check completed. Scanned {processed_count} apps.")
+        return {"status": "success", "scanned": processed_count}
         
     except Exception as e:
         logger.error(f"❌ Error in deadline check task: {str(e)}")
         return {"status": "error", "error": str(e)}
 
-def process_user_applications(db, uid, notification_count):
-    """Helper to process applications for a single user."""
-    try:
-        # Get user's applications subcollection
-        apps_ref = db.collection('users').document(uid).collection('applications')
-        # Filter: Only check applications that are NOT submitted yet (draft, in_progress, etc)
-        # Assuming status 'submitted' means we don't need to remind.
-        # If you want to remind even if submitted (unlikely), remove this filter.
-        apps = apps_ref.where('status', '!=', 'submitted').stream()
-        
-        today = datetime.now().date()
-        target_date = today + timedelta(days=DAYS_BEFORE_DEADLINE)
-        
-        for app in apps:
-            data = app.to_dict()
-            deadline_str = data.get('deadline') # Expecting ISO string or YYYY-MM-DD
-            scholarship_name = data.get('scholarship_name', 'Unknown Scholarship')
-            
-            if not deadline_str:
-                continue
-                
-            # Parse deadline (handle differences in format)
-            try:
-                # Try parsing ISO format first
-                if 'T' in deadline_str:
-                    deadline_date = datetime.fromisoformat(deadline_str.replace('Z', '')).date()
-                else:
-                    deadline_date = datetime.strptime(deadline_str, "%Y-%m-%d").date()
-            except ValueError:
-                # Fallback or invalid date format
-                continue
-            
-            # Check if deadline matches target date (exactly 3 days away)
-            # You can change to <= if you want persistent reminders
-            if deadline_date == target_date:
-                send_deadline_notification(db, uid, app.id, scholarship_name, DAYS_BEFORE_DEADLINE)
-                notification_count += 1
-                
-    except Exception as e:
-        logger.warning(f"⚠️ Error processing user {uid}: {e}")
-
-def send_deadline_notification(db, uid, app_id, scholarship_name, days_left):
-    """Create a notification document in Firestore."""
-    notification_data = {
-        'userId': uid,
-        'type': 'DEADLINE_WARNING',
-        'title': 'Hồ sơ sắp hết hạn!',
-        'message': f'Hồ sơ học bổng "{scholarship_name}" sẽ hết hạn trong {days_left} ngày nữa. Hãy nộp ngay!',
-        'isRead': False,
-        'createdAt': firestore.SERVER_TIMESTAMP,
-        'link': '/app/applications',
-        'metadata': {
-            'applicationId': app_id,
-            'daysLeft': days_left,
-            'isUrgent': True
-        }
-    }
+def process_single_application(uid, app):
+    """Check dates and emit event if needed."""
+    data = app.to_dict()
     
-    db.collection('notifications').add(notification_data)
-    logger.info(f"🔔 Notification sent to {uid} for {scholarship_name}")
+    # Priority: Use 'apply_date' (User target) -> Fallback to 'deadline' (Official)
+    target_date_str = data.get('apply_date') or data.get('deadline')
+    if not target_date_str:
+        return
+
+    try:
+        # Parse date (handle ISO format)
+        if 'T' in target_date_str:
+            target_date = datetime.fromisoformat(target_date_str.replace('Z', '')).date()
+        else:
+            target_date = datetime.strptime(target_date_str, "%Y-%m-%d").date()
+            
+        today = datetime.utcnow().date()
+        delta = (target_date - today).days
+        
+        # Trigger if EXACTLY X days left (to avoid spamming every day)
+        # Or you can add a 'last_notified_at' field to allow daily reminders
+        if delta == DAYS_BEFORE_DEADLINE:
+            payload = {
+                'user_id': uid,
+                'application_id': app.id,
+                'scholarship_name': data.get('scholarship_name', 'Unknown'),
+                'days_left': delta
+            }
+            
+            # Fire and forget event
+            asyncio.run(event_bus.emit("DEADLINE_APPROACHING", payload))
+            
+    except ValueError:
+        pass
