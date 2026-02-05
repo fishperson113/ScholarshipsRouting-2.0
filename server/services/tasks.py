@@ -3,10 +3,10 @@ Background tasks for the Scholarships Routing application.
 Place your Celery tasks here.
 """
 from celery_app import celery_app
-from celery import shared_task
-from firebase_admin import firestore
-from datetime import datetime, timedelta
 from typing import Dict, Any, List
+import requests
+import os
+import json
 import logging
 import asyncio
 from services.event_manager import event_bus
@@ -399,4 +399,48 @@ def upload_documents_bulk_task(collection: str, documents: List[Dict[str, Any]])
             "collection": collection,
             "error": str(e),
             "error_type": type(e).__name__
+        }
+
+
+@celery_app.task(name="tasks.send_to_n8n")
+def send_to_n8n(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Send message payload to n8n webhook.
+    
+    Args:
+        payload: Dict containing query, plan, user_id
+        
+    Returns:
+        Dict response from n8n
+    """
+    webhook_url = os.getenv("N8N_WEBHOOK_URL")
+    if not webhook_url:
+        return {
+            "status": "error",
+            "message": "N8N_WEBHOOK_URL not configured"
+        }
+        
+    try:
+        # Use a timeout of 30 seconds for the request itself
+        response = requests.post(webhook_url, json=payload, timeout=30)
+        response.raise_for_status()
+        
+        try:
+            return response.json()
+        except ValueError:
+            # If n8n returns text (or HTML error), wrap it
+            return {
+                "output": response.text,
+                "status": "success_text"
+            }
+        
+    except requests.exceptions.Timeout:
+        return {
+            "status": "error", 
+            "message": "Request to n8n timed out"
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": str(e)
         }
