@@ -8,13 +8,15 @@ services:
       dockerfile: Dockerfile
     container_name: scholarships-server
     env_file: [.env]
+    environment:
+      - GOOGLE_APPLICATION_CREDENTIALS=/secrets/firebase_key.json
     ports:
       - "${APP_PORT}:8000"
     depends_on:
       es:
         condition: service_healthy
     volumes:
-      - ./secrets/firebase_key.json:/run/secrets/firebase_key.json:ro
+      - ./secrets/firebase_key.json:/secrets/firebase_key.json:ro
       - ./server:/app
     restart: unless-stopped
 
@@ -65,7 +67,7 @@ services:
       - redis
     volumes:
       - ./server:/app
-      - ./secrets/firebase_key.json:/run/secrets/firebase_key.json:ro
+      - ./secrets/firebase_key.json:/secrets/firebase_key.json:ro
     restart: unless-stopped
 
   # ===================== Celery Flower (Monitoring) =====================
@@ -83,6 +85,7 @@ services:
       - celery_worker
     volumes:
       - ./server:/app
+      - ./secrets/firebase_key.json:/secrets/firebase_key.json:ro
     restart: unless-stopped
 
   # ===================== Celery Beat (Cron Scheduler) =====================
@@ -98,6 +101,7 @@ services:
     volumes:
       - ./server:/app
       - celerybeat-schedule:/tmp
+      - ./secrets/firebase_key.json:/secrets/firebase_key.json:ro
     restart: unless-stopped
 
 volumes:
