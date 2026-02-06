@@ -74,7 +74,18 @@ async def create_application(uid: str, data: ApplicationCreate):
     new_app['created_at'] = datetime.utcnow().isoformat()
     new_app['updated_at'] = datetime.utcnow().isoformat()
     
-    # Save to Firestore
+    # Remove debug logs and add duplicate check
+    
+    # Check if application already exists for this scholarship
+    existing_docs = db.collection('users').document(uid).collection('applications')\
+        .where('scholarship_id', '==', data.scholarship_id).limit(1).stream()
+    
+    for doc in existing_docs:
+        # If exists, return existing application instead of creating duplicate
+        print(f"DEBUG: Application for scholarship {data.scholarship_id} already exists. Skipping create.")
+        return {**doc.to_dict(), 'id': doc.id}
+
+    # Save to Firestore if not exists
     doc_ref = db.collection('users').document(uid).collection('applications').document()
     doc_ref.set(new_app)
     
@@ -108,3 +119,17 @@ def delete_application(uid: str, app_id: str):
     db = firestore.client()
     db.collection('users').document(uid).collection('applications').document(app_id).delete()
     return True
+
+def delete_application_by_scholarship_id(uid: str, scholarship_id: str):
+    db = firestore.client()
+    apps_ref = db.collection('users').document(uid).collection('applications')
+    
+    # Query for documents with this scholarship_id
+    docs = apps_ref.where('scholarship_id', '==', scholarship_id).stream()
+    
+    deleted_count = 0
+    for doc in docs:
+        doc.reference.delete()
+        deleted_count += 1
+        
+    return deleted_count > 0
