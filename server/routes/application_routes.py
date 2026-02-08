@@ -72,3 +72,27 @@ def delete_application_by_scholarship(
         pass 
         
     return {"status": "success", "message": "Application deleted"}
+
+
+# ==================== TEST ENDPOINTS ====================
+@router.post("/test/trigger-deadline-check")
+def test_trigger_deadline_check(
+    user: AuthenticatedUser = Depends(verify_firebase_user)
+):
+    """
+    MANUAL TRIGGER: Run the deadline check immediately.
+    Useful for testing notifications without waiting for midnight.
+    """
+    try:
+        from services.tasks.notification_tasks import check_application_deadlines
+        
+        # Run the task synchronously (in threadpool or directly)
+        result = check_application_deadlines()
+        
+        return {
+            "status": "triggered", 
+            "message": "Deadline check task executed manually",
+            "result": result
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

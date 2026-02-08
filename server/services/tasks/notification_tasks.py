@@ -53,6 +53,10 @@ def process_single_application(uid, app):
         return
 
     try:
+        # Import internally to allow cross-service usage
+        from services.event_manager import event_bus
+        import asyncio
+
         # Parse date (handle ISO format)
         if 'T' in target_date_str:
             target_date = datetime.fromisoformat(target_date_str.replace('Z', '')).date()
@@ -62,14 +66,15 @@ def process_single_application(uid, app):
         today = datetime.utcnow().date()
         delta = (target_date - today).days
         
-        # Trigger if EXACTLY X days left (to avoid spamming every day)
-        # Or you can add a 'last_notified_at' field to allow daily reminders
-        if delta == DAYS_BEFORE_DEADLINE:
+        # Trigger if days left is less than or equal to DAYS_BEFORE_DEADLINE
+        # This handles both upcoming deadlines (0 to 3 days) and missed deadlines (negative days)
+        if delta <= DAYS_BEFORE_DEADLINE:
             payload = {
                 'user_id': uid,
                 'application_id': app.id,
                 'scholarship_name': data.get('scholarship_name', 'Unknown'),
-                'days_left': delta
+                'days_left': delta,
+                'deadline_date': target_date.isoformat()
             }
             
             # Fire and forget event
@@ -77,3 +82,5 @@ def process_single_application(uid, app):
             
     except ValueError:
         pass
+    except Exception as e:
+        logger.error(f"Error processing app {app.id}: {e}")
