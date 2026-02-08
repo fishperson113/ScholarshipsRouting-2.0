@@ -58,21 +58,23 @@ async def handle_deadline_approaching(payload: dict):
     except:
         formatted_date = deadline_date_str
 
+    print(f"DEBUG: DEADLINE_APPROACHING handler called for App {app_id}. Days left: {days}")
+
     # 2. Determine Notification Type and Check Logic
     if days < 0:
         # --- CASE 1: LATE DEADLINE (Quote: "chỉ báo 1 lần") ---
         notif_type = 'DEADLINE_MISSED'
         
         # Check if ANY notification of this type exists for this application
-        existing_docs = db.collection('notifications')\
-            .where('userId', '==', uid)\
-            .where('type', '==', notif_type)\
-            .where('metadata.application_id', '==', app_id)\
-            .limit(1).stream()
+        # existing_docs = db.collection('notifications')\
+        #     .where('userId', '==', uid)\
+        #     .where('type', '==', notif_type)\
+        #     .where('metadata.application_id', '==', app_id)\
+        #     .limit(1).stream()
             
-        if any(existing_docs):
-            logger.info(f"🚫 Anti-spam: 'Late' notification for app {app_id} already exists. Skipping.")
-            return
+        # if any(existing_docs):
+        #     logger.info(f"🚫 Anti-spam: 'Late' notification for app {app_id} already exists. Skipping.")
+        #     return
 
         title = '⚠️ Đã quá hạn nộp!'
         message = f'Học bổng "{name}" đã kết thúc vào {formatted_date}. Rất tiếc bạn đã lỡ hạn nộp.'
@@ -82,18 +84,18 @@ async def handle_deadline_approaching(payload: dict):
         notif_type = 'DEADLINE_WARNING'
         
         # Check if notification exists TODAY
-        today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        # today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
         
-        existing_docs = db.collection('notifications')\
-            .where('userId', '==', uid)\
-            .where('type', '==', notif_type)\
-            .where('metadata.application_id', '==', app_id)\
-            .where('createdAt', '>=', today_start)\
-            .limit(1).stream()
+        # existing_docs = db.collection('notifications')\
+        #     .where('userId', '==', uid)\
+        #     .where('type', '==', notif_type)\
+        #     .where('metadata.application_id', '==', app_id)\
+        #     .where('createdAt', '>=', today_start)\
+        #     .limit(1).stream()
 
-        if any(existing_docs):
-            logger.info(f"🚫 Anti-spam: 'Upcoming' notification for app {app_id} already sent TODAY. Skipping.")
-            return
+        # if any(existing_docs):
+        #     logger.info(f"🚫 Anti-spam: 'Upcoming' notification for app {app_id} already sent TODAY. Skipping.")
+        #     return
 
         title = '🔥 Sắp hết hạn nộp!'
         message = f'Bạn có học bổng "{name}" sắp tới hạn. Hạn nộp là {formatted_date} (giờ gốc).'

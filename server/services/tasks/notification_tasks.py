@@ -29,8 +29,8 @@ def check_application_deadlines():
         for user in users:
             uid = user.id
             apps_ref = db.collection('users').document(uid).collection('applications')
-            # Only check active applications
-            apps = apps_ref.where('status', '!=', 'submitted').stream()
+            # Check ALL applications regardless of status (submitted, saved, etc.)
+            apps = apps_ref.stream()
             
             for app in apps:
                 process_single_application(uid, app)
@@ -78,9 +78,17 @@ def process_single_application(uid, app):
             }
             
             # Fire and forget event
-            asyncio.run(event_bus.emit("DEADLINE_APPROACHING", payload))
+            # Fire and forget event
+            try:
+                loop = asyncio.get_running_loop()
+                # If running in an event loop (e.g., FastAPI), schedule execution
+                loop.create_task(event_bus.emit("DEADLINE_APPROACHING", payload))
+            except RuntimeError:
+                # If no running loop (e.g., Celery Worker), run synchronously
+                asyncio.run(event_bus.emit("DEADLINE_APPROACHING", payload))
             
-    except ValueError:
-        pass
+    except ValueError as e:
+        print(f"❌ [Notification Error] Hiện tại đang lỗi ở process_single_application (ValueError). App ID: {app.id}. Vì ngày tháng không đúng định dạng: '{target_date_str}'. Chi tiết: {e}")
     except Exception as e:
+        print(f"❌ [Notification Error] Hiện tại đang lỗi ở process_single_application (Exception). App ID: {app.id}. Vì lỗi không xác định: {e}")
         logger.error(f"Error processing app {app.id}: {e}")
