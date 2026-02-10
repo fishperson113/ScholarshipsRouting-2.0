@@ -58,23 +58,21 @@ async def handle_deadline_approaching(payload: dict):
     except:
         formatted_date = deadline_date_str
 
-    print(f"DEBUG: DEADLINE_APPROACHING handler called for App {app_id}. Days left: {days}")
-
     # 2. Determine Notification Type and Check Logic
     if days < 0:
         # --- CASE 1: LATE DEADLINE (Quote: "chỉ báo 1 lần") ---
         notif_type = 'DEADLINE_MISSED'
         
         # Check if ANY notification of this type exists for this application
-        # existing_docs = db.collection('notifications')\
-        #     .where('userId', '==', uid)\
-        #     .where('type', '==', notif_type)\
-        #     .where('metadata.application_id', '==', app_id)\
-        #     .limit(1).stream()
+        existing_docs = db.collection('notifications')\
+            .where('userId', '==', uid)\
+            .where('type', '==', notif_type)\
+            .where('metadata.application_id', '==', app_id)\
+            .limit(1).stream()
             
-        # if any(existing_docs):
-        #     logger.info(f"🚫 Anti-spam: 'Late' notification for app {app_id} already exists. Skipping.")
-        #     return
+        if any(existing_docs):
+            logger.info(f"🚫 Anti-spam: 'Late' notification for app {app_id} already exists. Skipping.")
+            return
 
         title = '⚠️ Đã quá hạn nộp!'
         message = f'Học bổng "{name}" đã kết thúc vào {formatted_date}. Rất tiếc bạn đã lỡ hạn nộp.'
@@ -84,18 +82,18 @@ async def handle_deadline_approaching(payload: dict):
         notif_type = 'DEADLINE_WARNING'
         
         # Check if notification exists TODAY
-        # today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
         
-        # existing_docs = db.collection('notifications')\
-        #     .where('userId', '==', uid)\
-        #     .where('type', '==', notif_type)\
-        #     .where('metadata.application_id', '==', app_id)\
-        #     .where('createdAt', '>=', today_start)\
-        #     .limit(1).stream()
+        existing_docs = db.collection('notifications')\
+            .where('userId', '==', uid)\
+            .where('type', '==', notif_type)\
+            .where('metadata.application_id', '==', app_id)\
+            .where('createdAt', '>=', today_start)\
+            .limit(1).stream()
 
-        # if any(existing_docs):
-        #     logger.info(f"🚫 Anti-spam: 'Upcoming' notification for app {app_id} already sent TODAY. Skipping.")
-        #     return
+        if any(existing_docs):
+            logger.info(f"🚫 Anti-spam: 'Upcoming' notification for app {app_id} already sent TODAY. Skipping.")
+            return
 
         title = '🔥 Sắp hết hạn nộp!'
         message = f'Bạn có học bổng "{name}" sắp tới hạn. Hạn nộp là {formatted_date} (giờ gốc).'
@@ -216,3 +214,57 @@ def delete_application_by_scholarship_id(uid: str, scholarship_id: str):
         deleted_count += 1
         
     return deleted_count > 0
+
+# ==================== Notification Services (API Proxy) ====================
+
+def get_user_notifications(uid: str, limit: int = 50):
+    """
+    Retrieve user notifications via Backend API (Bypassing Firestore Client Rules).
+    """
+    db = firestore.client()
+    try:
+        # Query notifications for the user
+        # Note: Backend Admin SDK has full access, so no security rules apply here.
+        docs = db.collection('notifications')\
+            .where('userId', '==', uid)\
+            .order_by('createdAt', direction=firestore.Query.DESCENDING)\
+            .limit(limit)\
+            .stream()
+            
+        notifications = []
+        for doc in docs:
+            data = doc.to_dict()
+            # Convert timestamp to ISO string for JSON serialization
+            if data.get('createdAt'):
+                data['createdAt'] = data['createdAt'].isoformat()
+            
+            notifications.append({**data, 'id': doc.id})
+            
+        return notifications
+    except Exception as e:
+        logger.error(f"Error fetching notifications for {uid}: {e}")
+        return []
+
+def mark_notification_read(uid: str, notification_id: str):
+    """
+    Mark a notification as read. Verifies ownership first.
+    """
+    db = firestore.client()
+    try:
+        ref = db.collection('notifications').document(notification_id)
+        doc = ref.get()
+        
+        if not doc.exists:
+            return False
+            
+        data = doc.to_dict()
+        # Security Check: Ensure the notification belongs to the user
+        if data.get('userId') != uid:
+            logger.warning(f"Unauthorized read attempt by {uid} on notif {notification_id}")
+            return False
+            
+        ref.update({'isRead': True})
+        return True
+    except Exception as e:
+        logger.error(f"Error marking notification read: {e}")
+        return False

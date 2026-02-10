@@ -66,9 +66,12 @@ def process_single_application(uid, app):
         today = datetime.utcnow().date()
         delta = (target_date - today).days
         
+        print(f"🔍 [Deadline Check] App: {app.id} | Deadline: {target_date} | Today: {today} | Delta: {delta} days")
+
         # Trigger if days left is less than or equal to DAYS_BEFORE_DEADLINE
         # This handles both upcoming deadlines (0 to 3 days) and missed deadlines (negative days)
         if delta <= DAYS_BEFORE_DEADLINE:
+            print(f"🚀 [Triggering Event] DEADLINE_APPROACHING for App: {app.id}")
             payload = {
                 'user_id': uid,
                 'application_id': app.id,

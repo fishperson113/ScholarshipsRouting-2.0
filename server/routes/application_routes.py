@@ -96,3 +96,36 @@ def test_trigger_deadline_check(
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+# ==================== NOTIFICATION ENDPOINTS ====================
+
+@router.get("/{uid}/notifications")
+def get_user_notifications(
+    uid: str,
+    user: AuthenticatedUser = Depends(verify_firebase_user)
+):
+    """
+    Get backend-driven notifications (bypassing Client SDK Rules).
+    """
+    if user.uid != uid:
+        raise HTTPException(status_code=403, detail="Not authorized")
+    
+    return application_svc.get_user_notifications(uid)
+
+@router.put("/{uid}/notifications/{id}/read")
+def mark_notification_read(
+    uid: str,
+    id: str,
+    user: AuthenticatedUser = Depends(verify_firebase_user)
+):
+    """
+    Mark a notification as read.
+    """
+    if user.uid != uid:
+        raise HTTPException(status_code=403, detail="Not authorized")
+    
+    success = application_svc.mark_notification_read(uid, id)
+    if not success:
+         raise HTTPException(status_code=404, detail="Notification not found or unauthorized")
+         
+    return {"status": "success", "id": id}
