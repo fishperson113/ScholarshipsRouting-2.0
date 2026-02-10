@@ -20,8 +20,8 @@ async def handle_application_created(payload: dict):
     notification_data = {
         'userId': uid,
         'type': 'APPLICATION_ADDED',
-        'title': 'Đã thêm hồ sơ mới',
-        'message': f'Bạn đã bắt đầu hồ sơ cho học bổng "{app_name}". Hãy nhớ cập nhật tiến độ nhé!',
+        'title': 'New Application Started',
+        'message': f'You have started an application for "{app_name}". Remember to update your progress!',
         'isRead': False,
         'createdAt': firestore.SERVER_TIMESTAMP,
         'link': '/app/applications',
@@ -64,7 +64,7 @@ async def handle_deadline_approaching(payload: dict):
              deadline_dt = datetime.fromisoformat(deadline_date_str.replace('Z', ''))
         else:
              deadline_dt = datetime.strptime(deadline_date_str, "%Y-%m-%d")
-        formatted_date = deadline_dt.strftime("ngày %d tháng %m năm %Y")
+        formatted_date = deadline_dt.strftime("%B %d, %Y")
     except:
         formatted_date = deadline_date_str
 
@@ -84,8 +84,8 @@ async def handle_deadline_approaching(payload: dict):
             logger.info(f"🚫 Anti-spam: 'Late' notification for app {app_id} already exists. Skipping.")
             return
 
-        title = '⚠️ Đã quá hạn nộp!'
-        message = f'Học bổng "{name}" đã kết thúc vào {formatted_date}. Rất tiếc bạn đã lỡ hạn nộp.'
+        title = '⚠️ Deadline Missed!'
+        message = f'The scholarship "{name}" ended on {formatted_date}. Unfortunately, you missed the deadline.'
 
     else:
         # --- CASE 2: UPCOMING DEADLINE (Quote: "mỗi ngày báo 1 lần") ---
@@ -105,8 +105,8 @@ async def handle_deadline_approaching(payload: dict):
             logger.info(f"🚫 Anti-spam: 'Upcoming' notification for app {app_id} already sent TODAY. Skipping.")
             return
 
-        title = '🔥 Sắp hết hạn nộp!'
-        message = f'Bạn có học bổng "{name}" sắp tới hạn. Hạn nộp là {formatted_date} (giờ gốc).'
+        title = '🔥 Deadline Approaching!'
+        message = f'Scholarship "{name}" is ending soon. The deadline is {formatted_date}.'
 
     # 3. Create Notification
     notification_data = {
