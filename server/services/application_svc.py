@@ -2,6 +2,7 @@ from firebase_admin import firestore
 from datetime import datetime
 from dtos.application_dtos import ApplicationCreate, ApplicationUpdate
 from services.event_manager import event_bus
+from services.pubsub import pubsub, RedisPubSub
 import logging
 
 logger = logging.getLogger(__name__)
@@ -27,8 +28,17 @@ async def handle_application_created(payload: dict):
         'metadata': payload
     }
     
-    db.collection('notifications').add(notification_data)
+    update_time, doc_ref = db.collection('notifications').add(notification_data)
     logger.info(f"🔔 Notification sent to {uid} for new application")
+
+    # Real-time publish
+    try:
+        realtime_payload = notification_data.copy()
+        realtime_payload['id'] = doc_ref.id
+        realtime_payload['createdAt'] = datetime.utcnow().isoformat()
+        pubsub.publish(RedisPubSub.channel_user_notifications(uid), realtime_payload)
+    except Exception as e:
+        logger.error(f"Failed to publish realtime notification: {e}")
 
 async def handle_deadline_approaching(payload: dict):
     """
@@ -110,8 +120,17 @@ async def handle_deadline_approaching(payload: dict):
         'metadata': payload
     }
     
-    db.collection('notifications').add(notification_data)
+    update_time, doc_ref = db.collection('notifications').add(notification_data)
     logger.info(f"🔔 Notification sent to {uid}: {title}")
+
+    # Real-time publish
+    try:
+        realtime_payload = notification_data.copy()
+        realtime_payload['id'] = doc_ref.id
+        realtime_payload['createdAt'] = datetime.utcnow().isoformat()
+        pubsub.publish(RedisPubSub.channel_user_notifications(uid), realtime_payload)
+    except Exception as e:
+        logger.error(f"Failed to publish realtime notification: {e}")
 
 # Register the handlers
 event_bus.subscribe("APPLICATION_CREATED", handle_application_created)
