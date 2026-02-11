@@ -207,7 +207,7 @@ def sync_all_collections() -> Dict[str, Any]:
 
 # ==================== Notification Tasks ====================
 
-@shared_task(name="tasks.check_application_deadlines")
+@celery_app.task(name="tasks.check_application_deadlines")
 def check_application_deadlines():
     """
     Periodic task: Scans for expiring applications and emits events.
