@@ -1,1 +1,0 @@
-from .notification_tasks import check_application_deadlines

@@ -66,4 +66,4 @@ except ImportError:
 
 # ==================== Auto-discover Tasks ====================
 # Discover tasks from services.tasks module
-celery_app.autodiscover_tasks(['services.tasks'], force=True)
+celery_app.autodiscover_tasks(['services'], force=True)

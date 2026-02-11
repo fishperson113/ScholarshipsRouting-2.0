@@ -175,7 +175,7 @@ async def create_application(uid: str, data: ApplicationCreate):
     
     # --- IMMEDIATE DEADLINE CHECK (For Testing & Real-time feedback) ---
     try:
-        from services.tasks.notification_tasks import process_single_application
+        from services.tasks import process_single_application
         
         # Create a mock object similar to Firestore DocumentSnapshot
         class MockDoc:

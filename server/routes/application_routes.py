@@ -84,7 +84,7 @@ def test_trigger_deadline_check(
     Useful for testing notifications without waiting for midnight.
     """
     try:
-        from services.tasks.notification_tasks import check_application_deadlines
+        from services.tasks import check_application_deadlines
         
         # Run the task synchronously (in threadpool or directly)
         result = check_application_deadlines()

@@ -62,6 +62,8 @@ services:
       dockerfile: Dockerfile
     container_name: scholarships-celery-worker
     env_file: [ .env ]
+    environment:
+      - GOOGLE_APPLICATION_CREDENTIALS=/secrets/firebase_key.json
     command: celery -A celery_app worker --loglevel=info
     depends_on:
       - redis
@@ -77,6 +79,8 @@ services:
       dockerfile: Dockerfile
     container_name: scholarships-flower
     env_file: [ .env ]
+    environment:
+      - GOOGLE_APPLICATION_CREDENTIALS=/secrets/firebase_key.json
     command: celery -A celery_app flower --port=5555 --basic-auth=admin:flower_admin_password
     ports:
       - "5555:5555"
@@ -95,6 +99,8 @@ services:
       dockerfile: Dockerfile
     container_name: scholarships-celery-beat
     env_file: [ .env ]
+    environment:
+      - GOOGLE_APPLICATION_CREDENTIALS=/secrets/firebase_key.json
     command: celery -A celery_app beat --loglevel=info
     depends_on:
       - redis
