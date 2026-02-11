@@ -3,10 +3,10 @@ Background tasks for the Scholarships Routing application.
 Place your Celery tasks here.
 """
 from celery_app import celery_app
-from celery import shared_task
-from firebase_admin import firestore
-from datetime import datetime, timedelta
 from typing import Dict, Any, List
+import requests
+import os
+import json
 import logging
 import asyncio
 from services.event_manager import event_bus
@@ -400,3 +400,88 @@ def upload_documents_bulk_task(collection: str, documents: List[Dict[str, Any]])
             "error": str(e),
             "error_type": type(e).__name__
         }
+
+
+@celery_app.task(name="tasks.send_to_n8n")
+def send_to_n8n(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Send message payload to n8n webhook.
+    
+    Args:
+        payload: Dict containing query, plan, user_id
+        
+    Returns:
+        Dict response from n8n
+    """
+    webhook_url = os.getenv("N8N_WEBHOOK_URL")
+    if not webhook_url:
+        return {
+            "status": "error",
+            "message": "N8N_WEBHOOK_URL not configured"
+        }
+        
+    try:
+        # Use a timeout of 30 seconds for the request itself
+        response = requests.post(webhook_url, json=payload, timeout=30)
+        response.raise_for_status()
+        
+        try:
+            return response.json()
+        except ValueError:
+            # If n8n returns text (or HTML error), wrap it
+            return {
+                "output": response.text,
+                "status": "success_text"
+            }
+        
+    except requests.exceptions.Timeout:
+        return {
+            "status": "error", 
+            "message": "Request to n8n timed out"
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": str(e)
+        }
+
+
+@celery_app.task(name="tasks.receive_to_n8n")
+def receive_to_n8n(n8n_response: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Process raw response from n8n and format for ChatResponse.
+    
+    Args:
+        n8n_response: Raw response from send_to_n8n task
+        
+    Returns:
+        Dict matching ChatResponse DTO structure
+    """
+    # Helper to extract text reply
+    def json_extract_reply(data: dict) -> str:
+        if isinstance(data, dict) and data:
+            # Try to find 'output', 'text', 'reply' or just first value
+            if "output" in data:
+                return str(data["output"])
+            if "text" in data:
+                return str(data["text"])
+            if "reply" in data:
+                return str(data["reply"])
+            return str(next(iter(data.values())))
+        return str(data)
+
+    status = n8n_response.get("status", "success")
+    
+    # If there was an error in the previous task, propagate it
+    if status == "error":
+        return {
+            "reply": n8n_response.get("message", "Unknown error"),
+            "status": "error",
+            "celery": True
+        }
+        
+    return {
+        "reply": json_extract_reply(n8n_response),
+        "status": status,
+        "celery": True
+    }
