@@ -166,6 +166,45 @@ def sync_firestore_to_elasticsearch(collection: str, index: str = None) -> Dict[
         }
 
 
+@celery_app.task(name="tasks.sync_all_collections")
+def sync_all_collections() -> Dict[str, Any]:
+    """
+    Sync all Firestore collections to Elasticsearch.
+
+    Discovers all top-level collections in Firestore and syncs each one
+    by dispatching individual sync_firestore_to_elasticsearch tasks.
+
+    Returns:
+        Dict with task IDs for each collection
+    """
+    try:
+        db = firestore.client()
+        collections = [col.id for col in db.collections()]
+
+        if not collections:
+            return {"status": "ok", "message": "No collections found in Firestore", "tasks": {}}
+
+        task_map = {}
+        for col_name in collections:
+            task = sync_firestore_to_elasticsearch.apply_async(
+                kwargs={"collection": col_name, "index": col_name}
+            )
+            task_map[col_name] = task.id
+
+        return {
+            "status": "queued",
+            "total_collections": len(collections),
+            "tasks": task_map,
+        }
+
+    except Exception as e:
+        return {
+            "status": "error",
+            "error": str(e),
+            "error_type": type(e).__name__,
+        }
+
+
 # ==================== Notification Tasks ====================
 
 @shared_task(name="tasks.check_application_deadlines")

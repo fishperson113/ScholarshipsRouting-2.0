@@ -8,9 +8,11 @@ Provides publish/subscribe pattern for:
 - WebSocket message distribution
 """
 import json
+import time
 from typing import Callable, Dict, Any, Optional
 from services.redis_manager import redis_manager
 import threading
+import redis
 
 
 class RedisPubSub:
@@ -130,29 +132,47 @@ class RedisPubSub:
             self._listener_thread.join(timeout=5)
     
     def _listen(self):
-        """Background listener loop."""
-        for message in self._pubsub.listen():
-            if not self._running:
-                break
-            
-            if message['type'] == 'message':
-                channel = message['channel']
-                if isinstance(channel, bytes):
-                    channel = channel.decode('utf-8')
-                
-                # Deserialize message
-                try:
-                    data = json.loads(message['data'])
-                except:
-                    data = message['data']
-                
-                # Call all subscribers for this channel
-                if channel in self._subscribers:
-                    for callback in self._subscribers[channel]:
+        """Background listener loop with automatic reconnection."""
+        while self._running:
+            try:
+                for message in self._pubsub.listen():
+                    if not self._running:
+                        return
+
+                    if message['type'] == 'message':
+                        channel = message['channel']
+                        if isinstance(channel, bytes):
+                            channel = channel.decode('utf-8')
+
+                        # Deserialize message
                         try:
-                            callback(data)
-                        except Exception as e:
-                            print(f"Subscriber callback error: {e}")
+                            data = json.loads(message['data'])
+                        except Exception:
+                            data = message['data']
+
+                        # Call all subscribers for this channel
+                        if channel in self._subscribers:
+                            for callback in self._subscribers[channel]:
+                                try:
+                                    callback(data)
+                                except Exception as e:
+                                    print(f"Subscriber callback error: {e}")
+            except (redis.exceptions.TimeoutError, redis.exceptions.ConnectionError) as e:
+                if not self._running:
+                    return
+                print(f"PubSub connection lost ({e}), reconnecting in 2s...")
+                time.sleep(2)
+                try:
+                    self._pubsub = redis_manager.client.pubsub()
+                    for channel in self._subscribers:
+                        self._pubsub.subscribe(channel)
+                except Exception as reconnect_err:
+                    print(f"PubSub reconnect failed: {reconnect_err}")
+            except Exception as e:
+                if not self._running:
+                    return
+                print(f"PubSub unexpected error: {e}, retrying in 5s...")
+                time.sleep(5)
     
     # ==================== Predefined Channels ====================
     
