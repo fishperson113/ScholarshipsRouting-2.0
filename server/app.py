@@ -1,6 +1,6 @@
 import os
 from fastapi import FastAPI
-from routes import health, search, auth, webhooks, firestore_routes, realtime
+from routes import health, search, auth, webhooks, firestore_routes, realtime, application_routes
 import firebase_admin
 from firebase_admin import credentials
 from fastapi.middleware.cors import CORSMiddleware
@@ -54,6 +54,7 @@ app.include_router(search.router, prefix="/api/v1/es", tags=["elasticsearch"])
 app.include_router(webhooks.router, prefix="/api/v1/webhooks", tags=["webhooks"])
 app.include_router(firestore_routes.router, prefix="/api/v1/firestore", tags=["firestore"])
 app.include_router(realtime.router, prefix="/api/v1/realtime", tags=["realtime"])
+app.include_router(application_routes.router, prefix="/api/v1/user/applications", tags=["applications"])
 
 @app.get("/", tags=["root"])
 def root():

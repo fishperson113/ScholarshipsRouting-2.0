@@ -201,6 +201,16 @@ def configure_celery_beat(celery_app):
                 'expires': 7200,  # 2 hours
             }
         },
+
+        # ==================== DEADLINE NOTIFICATIONS ====================
+        # Check for upcoming deadlines daily at 00:00 (Midnight)
+        'check-application-deadlines': {
+            'task': 'tasks.check_application_deadlines',
+            'schedule': crontab(hour=0, minute=0),
+            'options': {
+                'expires': 3600,
+            }
+        },
         
         # ==================== Example: Additional Collections ====================
         # Uncomment and configure for other collections as needed
