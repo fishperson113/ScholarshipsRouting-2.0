@@ -444,3 +444,44 @@ def send_to_n8n(payload: Dict[str, Any]) -> Dict[str, Any]:
             "status": "error",
             "message": str(e)
         }
+
+
+@celery_app.task(name="tasks.receive_to_n8n")
+def receive_to_n8n(n8n_response: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Process raw response from n8n and format for ChatResponse.
+    
+    Args:
+        n8n_response: Raw response from send_to_n8n task
+        
+    Returns:
+        Dict matching ChatResponse DTO structure
+    """
+    # Helper to extract text reply
+    def json_extract_reply(data: dict) -> str:
+        if isinstance(data, dict) and data:
+            # Try to find 'output', 'text', 'reply' or just first value
+            if "output" in data:
+                return str(data["output"])
+            if "text" in data:
+                return str(data["text"])
+            if "reply" in data:
+                return str(data["reply"])
+            return str(next(iter(data.values())))
+        return str(data)
+
+    status = n8n_response.get("status", "success")
+    
+    # If there was an error in the previous task, propagate it
+    if status == "error":
+        return {
+            "reply": n8n_response.get("message", "Unknown error"),
+            "status": "error",
+            "celery": True
+        }
+        
+    return {
+        "reply": json_extract_reply(n8n_response),
+        "status": status,
+        "celery": True
+    }

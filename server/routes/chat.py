@@ -1,7 +1,8 @@
 from fastapi import APIRouter, HTTPException, BackgroundTasks
 from dtos.chat_dtos import ChatRequest, ChatResponse
-from services.tasks import send_to_n8n
+from services.tasks import send_to_n8n, receive_to_n8n
 from celery.result import AsyncResult
+from celery import chain
 import asyncio
 
 router = APIRouter()
@@ -14,7 +15,9 @@ async def chat_sync(request: ChatRequest):
     """
     try:
         # Enqueue task
-        task = send_to_n8n.delay(request.dict())
+        # Enqueue task chain
+        task_chain = chain(send_to_n8n.s(request.dict()) | receive_to_n8n.s())
+        task = task_chain.apply_async()
         
         # Wait for result (in a threadpool to not block event loop if not using rpc backend properly)
         # Note: In a real async connection pool environment, celery's .get() might block the loop 
@@ -24,7 +27,7 @@ async def chat_sync(request: ChatRequest):
         loop = asyncio.get_event_loop()
         # Wait up to 30s
         try:
-            result = await loop.run_in_executor(None, lambda: task.get(timeout=30))
+            result = await loop.run_in_executor(None, lambda: task.get(timeout=300))
         except Exception as e:
             # Timeout or other error
             raise HTTPException(status_code=504, detail="Upstream service timed out")
@@ -33,8 +36,9 @@ async def chat_sync(request: ChatRequest):
              raise HTTPException(status_code=500, detail=result.get("message"))
              
         return ChatResponse(
-            reply=json_extract_reply(result), # Helper to extract text
-            status="success"
+            reply=result.get("reply", ""),
+            status=result.get("status", "success"),
+            celery=result.get("celery", True)
         )
         
     except HTTPException as he:
@@ -42,9 +46,3 @@ async def chat_sync(request: ChatRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-def json_extract_reply(data: dict) -> str:
-    """Helper to try and find a text reply in common n8n structures"""
-    # Adjust this based on your actual n8n output structure
-    if isinstance(data, dict) and data:
-        return str(next(iter(data.values())))
-    return str(data)
