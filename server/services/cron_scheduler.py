@@ -212,17 +212,16 @@ def configure_celery_beat(celery_app):
             }
         },
         
-        # ==================== Example: Additional Collections ====================
-        # Uncomment and configure for other collections as needed
-        
-        # 'sync-elasticsearch-universities': {
-        #     'task': 'tasks.sync_firestore_to_elasticsearch',
-        #     'schedule': crontab(hour='3,9,15,21', minute=0),  # Every 6 hours, offset by 1 hour
-        #     'kwargs': {
-        #         'collection': 'universities',
-        #         'index': 'universities'
-        #     }
-        # },
+        # ==================== Sync All Collections (Biweekly) ====================
+        # Sync every Firestore collection to Elasticsearch every 2 weeks
+        # Runs on the 1st and 15th of each month at 1 AM
+        'sync-all-elasticsearch-biweekly': {
+            'task': 'tasks.sync_all_collections',
+            'schedule': crontab(hour=1, minute=0, day_of_month='1,15'),
+            'options': {
+                'expires': 7200,  # 2 hours
+            }
+        },
         
         # ==================== Monitoring & Health Checks ====================
         # Add health check tasks here if needed
