@@ -1,8 +1,6 @@
-from fastapi import APIRouter, HTTPException, BackgroundTasks
+from fastapi import APIRouter, HTTPException
 from dtos.chat_dtos import ChatRequest, ChatResponse
 from services.tasks import send_to_n8n, receive_to_n8n
-from celery.result import AsyncResult
-from celery import chain
 import asyncio
 
 router = APIRouter()
@@ -16,7 +14,7 @@ async def chat_sync(request: ChatRequest):
     try:
         # Enqueue task
         # Enqueue task chain
-        task_chain = chain(send_to_n8n.s(request.dict()) | receive_to_n8n.s())
+        task_chain = send_to_n8n.s(request.dict()) | receive_to_n8n.s()
         task = task_chain.apply_async()
         
         # Wait for result (in a threadpool to not block event loop if not using rpc backend properly)
