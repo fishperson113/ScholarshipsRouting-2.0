@@ -365,9 +365,9 @@ def filter_advanced(
         query_body["bool"]["filter"].append({"term": {"collection": collection}})
 
 
-    # Trả về rỗng nếu không có bất kỳ điều kiện nào
+    # Nếu không có điều kiện nào, dùng match_all
     if not query_body["bool"]:
-        return {"total": 0, "items": []}
+        query_body = {"match_all": {}}
 
     # Thực thi query
     res = client.search(
