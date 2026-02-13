@@ -11,34 +11,15 @@ logger = logging.getLogger(__name__)
 
 async def handle_application_created(payload: dict):
     """
-    Listener: When an application is created -> Send visible notification.
+    Listener: When an application is created.
+    NOTE: Previously sent "New Application Started" notification.
+    User request 2026-02-14: Disable this notification to avoid noise. Only deadline alerts are needed.
     """
-    db = firestore.client()
-    uid = payload.get('user_id')
-    app_name = payload.get('scholarship_name')
-    
-    notification_data = {
-        'userId': uid,
-        'type': 'APPLICATION_ADDED',
-        'title': 'New Application Started',
-        'message': f'You have started an application for "{app_name}". Remember to update your progress!',
-        'isRead': False,
-        'createdAt': firestore.SERVER_TIMESTAMP,
-        'link': '/app/applications',
-        'metadata': payload
-    }
-    
-    update_time, doc_ref = db.collection('notifications').add(notification_data)
-    logger.info(f"🔔 Notification sent to {uid} for new application")
-
-    # Real-time publish
-    try:
-        realtime_payload = notification_data.copy()
-        realtime_payload['id'] = doc_ref.id
-        realtime_payload['createdAt'] = datetime.utcnow().isoformat()
-        pubsub.publish(RedisPubSub.channel_user_notifications(uid), realtime_payload)
-    except Exception as e:
-        logger.error(f"Failed to publish realtime notification: {e}")
+    pass
+    # Original logic commented out for future reference if needed:
+    # db = firestore.client()
+    # uid = payload.get('user_id')
+    # ...
 
 async def handle_deadline_approaching(payload: dict):
     """

@@ -49,7 +49,8 @@ class RedisPubSub:
             })
         """
         try:
-            serialized = json.dumps(message)
+            # Use default=str to automatically handle datetime and other non-serializable types
+            serialized = json.dumps(message, default=str)
             return redis_manager.client.publish(channel, serialized)
         except Exception as e:
             print(f"Publish error: {e}")
