@@ -8,6 +8,7 @@ class ApplicationBase(BaseModel):
     apply_date: Optional[str] = Field(None, description="Target date to apply (ISO format)")
     status: str = Field("draft", description="Status: draft, submitted, approved, rejected")
     note: Optional[str] = Field(None, description="Personal notes")
+    deadline: Optional[str] = Field(None, description="Scholarship deadline (ISO format)")
 
 class ApplicationCreate(ApplicationBase):
     pass

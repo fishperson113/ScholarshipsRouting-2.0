@@ -257,11 +257,28 @@ def process_single_application(uid, app):
         from services.event_manager import event_bus
         import asyncio
 
-        # Parse date (handle ISO format)
+        # Parse date (handle ISO, YYYY-MM-DD, DD/MM/YYYY)
+        target_date = None
+        
+        # 1. Try ISO format
         if 'T' in target_date_str:
-            target_date = datetime.fromisoformat(target_date_str.replace('Z', '')).date()
-        else:
-            target_date = datetime.strptime(target_date_str, "%Y-%m-%d").date()
+            try:
+                target_date = datetime.fromisoformat(target_date_str.replace('Z', '')).date()
+            except ValueError:
+                pass
+        
+        # 2. Try common formats
+        if not target_date:
+            formats = ["%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y", "%Y/%m/%d", "%d.%m.%Y"]
+            for fmt in formats:
+                try:
+                    target_date = datetime.strptime(target_date_str, fmt).date()
+                    break
+                except ValueError:
+                    continue
+        
+        if not target_date:
+            raise ValueError(f"Cannot parse date string: {target_date_str}")
 
         today = datetime.utcnow().date()
         delta = (target_date - today).days

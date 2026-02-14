@@ -34,7 +34,12 @@ async def handle_deadline_approaching(payload: dict):
     """
     db = firestore.client()
     uid = payload.get('user_id')
-    days = payload.get('days_left')
+    try:
+        days = int(payload.get('days_left'))
+    except (ValueError, TypeError):
+        logger.error(f"Invalid days_left in payload: {payload.get('days_left')}")
+        return
+
     name = payload.get('scholarship_name')
     app_id = payload.get('application_id')
     deadline_date_str = payload.get('deadline_date', 'N/A')
@@ -65,29 +70,25 @@ async def handle_deadline_approaching(payload: dict):
             logger.info(f"🚫 Anti-spam: 'Late' notification for app {app_id} already exists. Skipping.")
             return
 
-        title = '⚠️ Deadline Missed!'
+        title = 'Deadline Missed'
         message = f'The scholarship "{name}" ended on {formatted_date}. Unfortunately, you missed the deadline.'
 
     else:
         # --- CASE 2: UPCOMING DEADLINE (Quote: "mỗi ngày báo 1 lần") ---
         notif_type = 'DEADLINE_WARNING'
         
-        # Check if notification exists TODAY
-        today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        # [SIMPLIFIED LOGIC] Always trigger notification for upcoming deadlines (0-3 days)
+        # Reason: 
+        # 1. Midnight job runs once -> No spam.
+        # 2. User manual Save -> Needs immediate feedback.
+        # 3. Ensures strict 3-day notification policy.
+
+        title = 'Deadline Approaching'
+        # Calculate X days left carefully
+        days_str = f"{days} days" if days > 0 else "TODAY"
+        if days == 1: days_str = "1 day"
         
-        existing_docs = db.collection('notifications')\
-            .where('userId', '==', uid)\
-            .where('type', '==', notif_type)\
-            .where('metadata.application_id', '==', app_id)\
-            .where('createdAt', '>=', today_start)\
-            .limit(1).stream()
-
-        if any(existing_docs):
-            logger.info(f"🚫 Anti-spam: 'Upcoming' notification for app {app_id} already sent TODAY. Skipping.")
-            return
-
-        title = '🔥 Deadline Approaching!'
-        message = f'Scholarship "{name}" is ending soon. The deadline is {formatted_date}.'
+        message = f'Scholarship "{name}" has {days_str} left. Deadline: {formatted_date}.'
 
     # 3. Create Notification
     notification_data = {
