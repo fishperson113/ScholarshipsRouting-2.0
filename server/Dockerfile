@@ -13,7 +13,8 @@ RUN pip install --no-cache-dir --upgrade pip
 
 # Copy requirements and install Python dependencies
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt \
+    && python -c "import websockets; print(f'websockets {websockets.__version__} OK')"
 
 # Copy application code
 COPY . .
@@ -22,4 +23,4 @@ COPY . .
 EXPOSE 8000
 
 # Run the application
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--ws-ping-interval", "30", "--ws-ping-timeout", "10"]
