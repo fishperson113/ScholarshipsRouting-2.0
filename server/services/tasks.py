@@ -272,7 +272,7 @@ def send_to_n8n(payload: Dict[str, Any]) -> Dict[str, Any]:
     Send message payload to n8n webhook.
     
     Args:
-        payload: Dict containing query, plan, user_id
+        payload: Dict containing query, plan, user_id, use_profile, sessionId (optional)
         
     Returns:
         Dict response from n8n
