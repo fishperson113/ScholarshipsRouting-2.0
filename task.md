@@ -6,6 +6,7 @@
 - [x] Phase 2: API & Integration <!-- id: 3 -->
   - [x] Create Chat Route (`server/routes/chat.py`) <!-- id: 4 -->
   - [x] Register Router (`server/app.py`) <!-- id: 5 -->
+<<<<<<< HEAD
 - [x] Phase 3: Session ID Integration <!-- id: 8 -->
   - [x] Brainstorm Implementation <!-- id: 9 -->
   - [x] Create Implementation Plan (`docs/PLAN-session-id.md`) <!-- id: 12 -->
@@ -17,4 +18,7 @@
   - [x] Update Task Documentation (`server/services/tasks.py`) <!-- id: 16 -->
   - [x] Verify Route Compatibility <!-- id: 17 -->
 - [ ] Phase 5: Verification <!-- id: 6 -->
+=======
+- [ ] Phase 3: Verification <!-- id: 6 -->
+>>>>>>> 6d6f8e271f6de622637b3af34bef0a504926516b
   - [ ] Manual Verification (Flow Test) <!-- id: 7 -->

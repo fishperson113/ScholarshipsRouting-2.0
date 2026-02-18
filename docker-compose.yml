@@ -22,7 +22,7 @@ services:
 
   # ===================== Elasticsearch =====================
   es:
-    image: docker.elastic.co/elasticsearch/elasticsearch:9.1.4
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.1
     container_name: scholarships-elasticsearch
     environment:
       - discovery.type=single-node
@@ -31,7 +31,7 @@ services:
     ports:
       - "${ELASTICSEARCH_PORT}:9200"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9200/_cluster/health"]
+      test: [ "CMD", "curl", "-f", "http://localhost:9200/_cluster/health" ]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -47,7 +47,7 @@ services:
     ports:
       - "${REDIS_PORT}:6379"
     healthcheck:
-      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      test: [ "CMD", "redis-cli", "--raw", "incr", "ping" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -61,7 +61,9 @@ services:
       context: ./server
       dockerfile: Dockerfile
     container_name: scholarships-celery-worker
-    env_file: [.env]
+    env_file: [ .env ]
+    environment:
+      - GOOGLE_APPLICATION_CREDENTIALS=/secrets/firebase_key.json
     command: celery -A celery_app worker --loglevel=info
     depends_on:
       - redis
@@ -76,7 +78,9 @@ services:
       context: ./server
       dockerfile: Dockerfile
     container_name: scholarships-flower
-    env_file: [.env]
+    env_file: [ .env ]
+    environment:
+      - GOOGLE_APPLICATION_CREDENTIALS=/secrets/firebase_key.json
     command: celery -A celery_app flower --port=5555 --basic-auth=admin:flower_admin_password
     ports:
       - "5555:5555"
@@ -94,7 +98,9 @@ services:
       context: ./server
       dockerfile: Dockerfile
     container_name: scholarships-celery-beat
-    env_file: [.env]
+    env_file: [ .env ]
+    environment:
+      - GOOGLE_APPLICATION_CREDENTIALS=/secrets/firebase_key.json
     command: celery -A celery_app beat --loglevel=info
     depends_on:
       - redis

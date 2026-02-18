@@ -163,6 +163,32 @@ def sync_firestore_to_es(
         "check_status": f"/api/v1/firestore/upload/status/{task.id}"
     }
 
+@router.post("/sync-all")
+def sync_all_collections():
+    """
+    Sync all Firestore collections to Elasticsearch in one click.
+
+    Discovers every top-level Firestore collection and queues a sync
+    task for each one via Celery.
+
+    Returns:
+        Task ID of the parent task and per-collection sub-task IDs
+
+    Example:
+        POST /api/v1/es/sync-all
+    """
+    from services.tasks import sync_all_collections as sync_all_task
+
+    task = sync_all_task.apply_async()
+
+    return {
+        "status": "queued",
+        "message": "Sync-all task queued — each collection will be synced in parallel",
+        "task_id": task.id,
+        "check_status": f"/api/v1/firestore/upload/status/{task.id}",
+    }
+
+
 filter_example = [
     {
       "field": "Country",
