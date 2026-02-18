@@ -5,6 +5,8 @@ Place your Celery tasks here.
 from celery_app import celery_app
 from celery_app import celery_app
 from typing import Dict, Any, List
+from firebase_admin import firestore
+from datetime import datetime
 import requests
 import os
 import json
@@ -211,7 +213,7 @@ def sync_all_collections() -> Dict[str, Any]:
 
 # ==================== Notification Tasks ====================
 
-@shared_task(name="tasks.check_application_deadlines")
+@celery_app.task(name="tasks.check_application_deadlines")
 def check_application_deadlines():
     """
     Periodic task: Scans for expiring applications and emits events.

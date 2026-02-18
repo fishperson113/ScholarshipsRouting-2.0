@@ -5,9 +5,10 @@ Provides real-time notifications to connected clients.
 """
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from typing import Set
-import json
+import logging
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 # Track active WebSocket connections
 active_connections: Set[WebSocket] = set()
@@ -17,40 +18,37 @@ active_connections: Set[WebSocket] = set()
 async def websocket_updates(websocket: WebSocket, channel: str):
     """
     WebSocket endpoint for real-time updates.
-    
+
     Clients connect and receive messages published to the specified channel.
-    
+
     Example:
         ws://localhost:8000/api/v1/realtime/ws/updates/firestore.scholarships
     """
     await websocket.accept()
     active_connections.add(websocket)
-    
+
+    from services.pubsub import pubsub
+
+    async def on_message(message):
+        """Called directly on the event loop when a PubSub message arrives."""
+        try:
+            await websocket.send_json(message)
+        except Exception:
+            pass
+
+    await pubsub.subscribe(channel, on_message)
+
     try:
-        from services.pubsub import pubsub
-        
-        # Subscribe to channel and forward messages to WebSocket
-        async def forward_to_websocket(message):
-            try:
-                await websocket.send_json(message)
-            except:
-                pass
-        
-        # Subscribe to Redis channel
-        pubsub.subscribe(channel, lambda msg: forward_to_websocket(msg))
-        
-        # Keep connection alive and handle client messages
         while True:
-            data = await websocket.receive_text()
-            # Echo back or handle client messages if needed
-            
+            await websocket.receive_text()
     except WebSocketDisconnect:
-        active_connections.remove(websocket)
-        print(f"Client disconnected from channel: {channel}")
+        pass
     except Exception as e:
-        print(f"WebSocket error: {e}")
-        if websocket in active_connections:
-            active_connections.remove(websocket)
+        logger.error(f"WebSocket error on channel {channel}: {e}")
+    finally:
+        await pubsub.unsubscribe(channel, on_message)
+        active_connections.discard(websocket)
+        logger.info(f"Client disconnected from channel: {channel}")
 
 
 @router.get("/channels")

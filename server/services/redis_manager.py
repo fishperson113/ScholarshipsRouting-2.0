@@ -7,6 +7,7 @@ common caching patterns for the application.
 import os
 import json
 import redis
+import redis.asyncio as aioredis
 from typing import Any, Optional, Callable, Union
 from datetime import timedelta
 from functools import wraps
@@ -68,7 +69,63 @@ class RedisManager:
         if self._client is None:
             self._connect()
         return self._client
-    
+
+    def create_pubsub_client(self) -> redis.Redis:
+        """
+        Create a dedicated Redis client for PubSub subscriptions.
+
+        PubSub connections need different timeout settings than regular commands:
+        - socket_timeout=None (block indefinitely waiting for messages)
+        - socket_keepalive=True (prevent OS from killing idle TCP connections)
+        - health_check_interval=0 (health checks interfere with PubSub listen)
+        """
+        redis_host = os.getenv("REDIS_HOST", "redis")
+        redis_port = int(os.getenv("REDIS_PORT", "6379"))
+        redis_password = os.getenv("REDIS_PASSWORD", "redis_pass")
+        redis_db = int(os.getenv("REDIS_DB", "0"))
+
+        client = redis.Redis(
+            host=redis_host,
+            port=redis_port,
+            password=redis_password,
+            db=redis_db,
+            decode_responses=True,
+            socket_connect_timeout=5,
+            socket_timeout=None,
+            socket_keepalive=True,
+            health_check_interval=0,
+            retry_on_timeout=True,
+        )
+
+        client.ping()
+        print(f"✅ Redis PubSub client created: {redis_host}:{redis_port}")
+        return client
+
+    def create_async_pubsub_client(self) -> aioredis.Redis:
+        """
+        Create a dedicated async Redis client for PubSub subscriptions.
+
+        Uses redis.asyncio for native async/await support on the FastAPI event loop.
+        Same timeout philosophy as create_pubsub_client() but fully async.
+        """
+        redis_host = os.getenv("REDIS_HOST", "redis")
+        redis_port = int(os.getenv("REDIS_PORT", "6379"))
+        redis_password = os.getenv("REDIS_PASSWORD", "redis_pass")
+        redis_db = int(os.getenv("REDIS_DB", "0"))
+
+        return aioredis.Redis(
+            host=redis_host,
+            port=redis_port,
+            password=redis_password,
+            db=redis_db,
+            decode_responses=True,
+            socket_connect_timeout=5,
+            socket_timeout=None,
+            socket_keepalive=True,
+            health_check_interval=0,
+            retry_on_timeout=True,
+        )
+
     # ==================== Cache-Aside Pattern ====================
     
     def get_cached(

@@ -51,6 +51,16 @@ async def startup_event():
         print(f"⚠️  Redis connection failed: {e}")
         print("   Application will continue without caching")
 
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Clean up connections on shutdown."""
+    print("Shutting down Scholarships Routing API 2.0...")
+    try:
+        from services.pubsub import pubsub
+        await pubsub.shutdown()
+    except Exception as e:
+        print(f"PubSub shutdown error: {e}")
+
 # Include routers
 app.include_router(health.router, prefix="/health", tags=["health"])
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["auth"])
