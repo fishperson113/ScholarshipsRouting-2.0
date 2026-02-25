@@ -36,7 +36,8 @@ async def chat_sync(request: ChatRequest):
         return ChatResponse(
             reply=result.get("reply", ""),
             status=result.get("status", "success"),
-            celery=result.get("celery", True)
+            celery=result.get("celery", True),
+            sessionId=request.sessionId
         )
         
     except HTTPException as he:

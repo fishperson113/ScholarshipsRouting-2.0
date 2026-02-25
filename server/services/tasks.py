@@ -415,11 +415,17 @@ def send_to_n8n(payload: Dict[str, Any]) -> Dict[str, Any]:
     Returns:
         Dict response from n8n
     """
+    session_id = str(payload.get("sessionId", "unknown-session"))
+    payload["sessionId"] = session_id # Ensure it's a string for JSON serialization
+    logger.info(f"[Session: {session_id}] Sending payload to n8n webhook...")
+
     webhook_url = os.getenv("N8N_WEBHOOK_URL")
     if not webhook_url:
+        logger.error(f"[Session: {session_id}] N8N_WEBHOOK_URL not configured")
         return {
             "status": "error",
-            "message": "N8N_WEBHOOK_URL not configured"
+            "message": "N8N_WEBHOOK_URL not configured",
+            "sessionId": session_id
         }
         
     try:
@@ -428,23 +434,31 @@ def send_to_n8n(payload: Dict[str, Any]) -> Dict[str, Any]:
         response.raise_for_status()
         
         try:
-            return response.json()
+            result = response.json()
         except ValueError:
             # If n8n returns text (or HTML error), wrap it
-            return {
+            result = {
                 "output": response.text,
                 "status": "success_text"
             }
+            
+        result["sessionId"] = session_id
+        logger.info(f"[Session: {session_id}] Successfully received response from n8n")
+        return result
         
     except requests.exceptions.Timeout:
+        logger.error(f"[Session: {session_id}] Request to n8n timed out")
         return {
             "status": "error", 
-            "message": "Request to n8n timed out"
+            "message": "Request to n8n timed out",
+            "sessionId": session_id
         }
     except Exception as e:
+        logger.error(f"[Session: {session_id}] Error calling n8n: {str(e)}")
         return {
             "status": "error",
-            "message": str(e)
+            "message": str(e),
+            "sessionId": session_id
         }
 
 
@@ -473,17 +487,23 @@ def receive_to_n8n(n8n_response: Dict[str, Any]) -> Dict[str, Any]:
         return str(data)
 
     status = n8n_response.get("status", "success")
+    session_id = n8n_response.get("sessionId")
+    
+    if session_id:
+        logger.info(f"[Session: {session_id}] Processing n8n response in receive_to_n8n")
     
     # If there was an error in the previous task, propagate it
     if status == "error":
         return {
             "reply": n8n_response.get("message", "Unknown error"),
             "status": "error",
-            "celery": True
+            "celery": True,
+            "sessionId": session_id
         }
         
     return {
         "reply": json_extract_reply(n8n_response),
         "status": status,
-        "celery": True
+        "celery": True,
+        "sessionId": session_id
     }
