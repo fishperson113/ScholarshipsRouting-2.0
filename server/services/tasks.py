@@ -15,7 +15,7 @@ from services.event_manager import event_bus
 
 logger = logging.getLogger(__name__)
 
-DAYS_BEFORE_DEADLINE = 3
+NOTIFICATION_CHECKPOINTS = [7, 3, 1, 0]
 
 
 # ==================== Sync Tasks ====================
@@ -268,9 +268,9 @@ def process_single_application(uid, app):
 
         print(f"🔍 [Deadline Check] App: {app.id} | Deadline: {target_date} | Today: {today} | Delta: {delta} days")
 
-        # Trigger if days left is less than or equal to DAYS_BEFORE_DEADLINE
-        # This handles both upcoming deadlines (0 to 3 days) and missed deadlines (negative days)
-        if delta <= DAYS_BEFORE_DEADLINE:
+        # Trigger if days left is one of the checkpoints or missed deadline
+        # Logic updated: 7, 3, 1 days before deadline OR late (< 0)
+        if delta in NOTIFICATION_CHECKPOINTS or delta < 0:
             print(f"🚀 [Triggering Event] DEADLINE_APPROACHING for App: {app.id}")
             payload = {
                 'user_id': uid,

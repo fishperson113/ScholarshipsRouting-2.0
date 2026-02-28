@@ -1,11 +1,32 @@
 from firebase_admin import firestore
 from datetime import datetime
+import hashlib
 from dtos.application_dtos import ApplicationCreate, ApplicationUpdate
 from services.event_manager import event_bus
 from services.pubsub import pubsub, RedisPubSub
 import logging
 
 logger = logging.getLogger(__name__)
+
+# ==================== Configuration & Helpers ====================
+
+NOTIFICATION_RULES = {
+    0: ("DEADLINE_TODAY", "Deadline Today!", "URGENT: Scholarship '{name}' deadline is TODAY ({date}). Submit now!"),
+    1: ("DEADLINE_1_DAY", "1 Day Left", "Hurry! Scholarship '{name}' ends tomorrow ({date})."),
+    3: ("DEADLINE_3_DAYS", "3 Days Left", "Scholarship '{name}' has 3 days left. Deadline: {date}."),
+    7: ("DEADLINE_7_DAYS", "1 Week Left", "Scholarship '{name}' has 1 week left. Ends on {date}.")
+}
+
+def get_notification_config(days: int):
+    """Lấy Metadata của thông báo dựa vào số ngày (Rules dictionary)"""
+    if days < 0:
+        return ("DEADLINE_MISSED", "Deadline Missed", 'The scholarship "{name}" ended on {date}. Unfortunately, you missed the deadline.')
+    return NOTIFICATION_RULES.get(days)
+
+def generate_idempotent_id(uid: str, app_id: str, type_name: str, target_date: str) -> str:
+    """Tạo Document ID duy nhất bằng Hash MD5 để chống Spam"""
+    raw_str = f"{uid}_{app_id}_{type_name}_{target_date}"
+    return hashlib.md5(raw_str.encode('utf-8')).hexdigest()
 
 # ==================== Event Handlers (The "Webhook" Logic) ====================
 
@@ -42,19 +63,17 @@ async def handle_application_created(payload: dict):
 
 async def handle_deadline_approaching(payload: dict):
     """
-    Listener: When deadline is near OR passed -> Send notification.
-    Payload: { 
-        'user_id': uid, 
-        'application_id': app_id, 
-        'scholarship_name': name, 
-        'days_left': delta,
-        'deadline_date': 'YYYY-MM-DD' 
-    }
+    Listener: When deadline is near OR passed -> Send notification using Idempotent Key.
     """
     db = firestore.client()
     uid = payload.get('user_id')
-    days = payload.get('days_left')
-    name = payload.get('scholarship_name')
+    try:
+        days = int(payload.get('days_left'))
+    except (ValueError, TypeError):
+        logger.error(f"Invalid days_left in payload: {payload.get('days_left')}")
+        return
+
+    name = payload.get('scholarship_name', 'Unknown')
     app_id = payload.get('application_id')
     deadline_date_str = payload.get('deadline_date', 'N/A')
     
@@ -68,47 +87,24 @@ async def handle_deadline_approaching(payload: dict):
     except:
         formatted_date = deadline_date_str
 
-    # 2. Determine Notification Type and Check Logic
-    if days < 0:
-        # --- CASE 1: LATE DEADLINE (Quote: "chỉ báo 1 lần") ---
-        notif_type = 'DEADLINE_MISSED'
+    # 2. Get Notification Rule
+    config = get_notification_config(days)
+    if not config:
+        return  # Bỏ qua nếu không đúng mốc thời gian báo (vd: >7 ngày, hay 2,4,5,6 ngày)
         
-        # Check if ANY notification of this type exists for this application
-        existing_docs = db.collection('notifications')\
-            .where('userId', '==', uid)\
-            .where('type', '==', notif_type)\
-            .where('metadata.application_id', '==', app_id)\
-            .limit(1).stream()
-            
-        if any(existing_docs):
-            logger.info(f"🚫 Anti-spam: 'Late' notification for app {app_id} already exists. Skipping.")
-            return
+    notif_type, title, message_tpl = config
+    message = message_tpl.format(name=name, date=formatted_date)
 
-        title = '⚠️ Deadline Missed!'
-        message = f'The scholarship "{name}" ended on {formatted_date}. Unfortunately, you missed the deadline.'
-
-    else:
-        # --- CASE 2: UPCOMING DEADLINE (Quote: "mỗi ngày báo 1 lần") ---
-        notif_type = 'DEADLINE_WARNING'
-        
-        # Check if notification exists TODAY
-        today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
-        
-        existing_docs = db.collection('notifications')\
-            .where('userId', '==', uid)\
-            .where('type', '==', notif_type)\
-            .where('metadata.application_id', '==', app_id)\
-            .where('createdAt', '>=', today_start)\
-            .limit(1).stream()
-
-        if any(existing_docs):
-            logger.info(f"🚫 Anti-spam: 'Upcoming' notification for app {app_id} already sent TODAY. Skipping.")
-            return
-
-        title = '🔥 Deadline Approaching!'
-        message = f'Scholarship "{name}" is ending soon. The deadline is {formatted_date}.'
-
-    # 3. Create Notification
+    # 3. Create Idempotency Key
+    idempotent_id = generate_idempotent_id(uid, app_id, notif_type, deadline_date_str)
+    
+    # 4. Check & Create Notification (Anti-Spam Shield)
+    doc_ref = db.collection('notifications').document(idempotent_id)
+    
+    # Firebase Firestore read (1 doc read is extremely cheap and fast)
+    if doc_ref.get().exists:
+        logger.info(f"🚫 Anti-spam: Notification '{notif_type}' for app {app_id} already exists. Skipping.")
+        return
     notification_data = {
         'userId': uid,
         'type': notif_type,
@@ -120,13 +116,14 @@ async def handle_deadline_approaching(payload: dict):
         'metadata': payload
     }
     
-    update_time, doc_ref = db.collection('notifications').add(notification_data)
+    # Notice: using .set() with the generated ID instead of .add()
+    doc_ref.set(notification_data)
     logger.info(f"🔔 Notification sent to {uid}: {title}")
 
-    # Real-time publish
+    # 5. Real-time publish
     try:
         realtime_payload = notification_data.copy()
-        realtime_payload['id'] = doc_ref.id
+        realtime_payload['id'] = idempotent_id
         realtime_payload['createdAt'] = datetime.utcnow().isoformat()
         pubsub.publish(RedisPubSub.channel_user_notifications(uid), realtime_payload)
     except Exception as e:

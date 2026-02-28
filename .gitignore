@@ -72,3 +72,9 @@ esdata/
 celerybeat-schedule
 celerybeat-schedule.*
 celerybeat.pid
+
+# Node
+node_modules/
+npm-debug.log
+yarn-error.log
+.pnpm-debug.log
